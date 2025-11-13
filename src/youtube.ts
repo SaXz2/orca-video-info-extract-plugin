@@ -380,20 +380,37 @@ export async function processYouTubeLink(blockId: number, pluginName: string): P
 
         // 获取频道详细信息
         try {
+          console.log('🔍 开始获取YouTube频道详细信息，channelId:', videoInfo.channelId);
+          console.log('🔑 API Key是否配置:', !!apiKey);
+
+          if (!apiKey) {
+            console.log('⚠️ 未配置YouTube API Key，跳过频道详细信息获取');
+            return;
+          }
+
           const channelInfo = await getYouTubeChannelInfo(videoInfo.channelId, apiKey);
+          console.log('📊 获取到的YouTube频道信息:', channelInfo);
 
           // 为"视频创作者"标签别名块设置详细属性
           if (videoCreatorTagId) {
-            const creatorBlock = orca.state.blocks[videoCreatorTagId];
-            const creatorTagRef = creatorBlock?.refs?.find(
-              (ref: any) => ref.type === 2 && ref.alias === "视频创作者"
+            console.log('🏷️ YouTube视频创作者标签ID:', videoCreatorTagId);
+
+            // 从博主标签块中找到指向"视频创作者"标签的引用
+            const bloggerBlock = orca.state.blocks[bloggerTagId];
+            console.log('👤 博主标签块:', bloggerBlock);
+            console.log('👤 博主标签块的refs:', bloggerBlock?.refs);
+
+            const creatorTagRef = bloggerBlock?.refs?.find(
+              (ref: any) => ref.to === videoCreatorTagId && ref.alias === "视频创作者"
             );
+            console.log('🔗 找到的YouTube视频创作者标签引用:', creatorTagRef);
 
             if (creatorTagRef) {
               const refData = [];
 
               // 添加粉丝数
               if (channelInfo.followerCount !== null) {
+                console.log('👥 添加YouTube粉丝数:', channelInfo.followerCount);
                 refData.push({
                   name: "followerCount",
                   value: channelInfo.followerCount.toString(),
@@ -403,6 +420,7 @@ export async function processYouTubeLink(blockId: number, pluginName: string): P
 
               // 添加主页链接（使用链接属性类型）
               if (channelInfo.homepage) {
+                console.log('🌐 添加YouTube主页链接:', channelInfo.homepage);
                 refData.push({
                   name: "homepage",
                   value: channelInfo.homepage,
@@ -413,6 +431,7 @@ export async function processYouTubeLink(blockId: number, pluginName: string): P
 
               // 添加视频数
               if (channelInfo.videoCount !== null) {
+                console.log('🎬 添加YouTube视频数:', channelInfo.videoCount);
                 refData.push({
                   name: "videoCount",
                   value: channelInfo.videoCount.toString(),
@@ -422,6 +441,7 @@ export async function processYouTubeLink(blockId: number, pluginName: string): P
 
               // 添加播放数
               if (channelInfo.viewCount !== null) {
+                console.log('▶️ 添加YouTube播放数:', channelInfo.viewCount);
                 refData.push({
                   name: "playCount",
                   value: channelInfo.viewCount.toString(),
@@ -429,18 +449,28 @@ export async function processYouTubeLink(blockId: number, pluginName: string): P
                 });
               }
 
+              console.log('📝 准备写入的YouTube属性数据:', refData);
+
               if (refData.length > 0) {
+                console.log('💾 开始写入YouTube属性...');
                 await orca.commands.invokeEditorCommand(
                   "core.editor.setRefData",
                   null,
                   creatorTagRef,
                   refData
                 );
+                console.log('✅ YouTube属性写入完成');
+              } else {
+                console.log('⚠️ 没有有效的YouTube属性数据可写入');
               }
+            } else {
+              console.log('❌ 未找到YouTube视频创作者标签引用');
             }
+          } else {
+            console.log('❌ YouTube视频创作者标签创建失败');
           }
         } catch (error) {
-          console.error('获取YouTube频道详细信息失败:', error);
+          console.error('❌ 获取YouTube频道详细信息失败:', error);
         }
       }
     }
