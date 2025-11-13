@@ -17,10 +17,19 @@ interface Block {
 export interface VimeoVideoInfo {
   thumbnailUrl: string | null;
   author: string | null;
+  authorId: string | null;
   title: string | null;
   tags: string[];
   publishDate: string | null;
   embedUrl: string | null;
+}
+
+export interface VimeoUserInfo {
+  followerCount: number | null;
+  homepage: string | null;
+  videoCount: number | null;
+  likeCount: number | null;
+  playCount: number | null;
 }
 
 export interface VimeoAPIResponse {
@@ -38,6 +47,7 @@ export interface VimeoAPIResponse {
   user: {
     name: string;
     link: string;
+    uri: string;
   };
   pictures: {
     sizes: Array<{
@@ -166,7 +176,7 @@ export async function getVimeoEmbedUrl(videoUrl: string): Promise<string | null>
  */
 export async function getVimeoVideoInfo(videoId: string, accessToken: string, videoUrl?: string): Promise<VimeoVideoInfo> {
   try {
-    const url = `https://api.vimeo.com/videos/${videoId}?fields=uri,name,description,link,duration,width,height,created_time,modified_time,release_time,user.name,user.link,pictures.sizes,tags.name,categories.name`;
+    const url = `https://api.vimeo.com/videos/${videoId}?fields=uri,name,description,link,duration,width,height,created_time,modified_time,release_time,user.name,user.link,user.uri,pictures.sizes,tags.name,categories.name`;
     const response = await fetch(url, {
       headers: {
         'Authorization': `Bearer ${accessToken}`,
@@ -224,6 +234,7 @@ export async function getVimeoVideoInfo(videoId: string, accessToken: string, vi
     return {
       thumbnailUrl,
       author: data.user?.name || null,
+      authorId: data.user?.uri || null,
       title: data.name || null,
       tags: allTags,
       publishDate,
@@ -232,6 +243,56 @@ export async function getVimeoVideoInfo(videoId: string, accessToken: string, vi
   } catch (error) {
     console.error('获取 Vimeo 视频信息失败:', error);
     throw error;
+  }
+}
+
+/**
+ * 获取 Vimeo 用户详细信息
+ * @param userUri Vimeo 用户 URI
+ * @param accessToken Vimeo 访问令牌
+ * @returns 用户详细信息
+ */
+export async function getVimeoUserInfo(userUri: string, accessToken: string): Promise<VimeoUserInfo> {
+  try {
+    // 从 URI 中提取用户 ID
+    const userId = userUri.replace('/users/', '');
+    const url = `https://api.vimeo.com/users/${userId}?fields=name,link,metadata.connections.videos.total,metadata.connections.followers.total,metadata.connections.likes.total`;
+
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Accept': 'application/vnd.vimeo.*+json;version=3.4'
+      }
+    });
+
+    if (!response.ok) {
+      return {
+        followerCount: null,
+        homepage: null,
+        videoCount: null,
+        likeCount: null,
+        playCount: null
+      };
+    }
+
+    const data = await response.json();
+
+    return {
+      followerCount: data.metadata?.connections?.followers?.total || null,
+      homepage: data.link || null,
+      videoCount: data.metadata?.connections?.videos?.total || null,
+      likeCount: data.metadata?.connections?.likes?.total || null,
+      playCount: null // Vimeo API 需要单独调用获取每个视频的播放统计，这里暂时设为 null
+    };
+  } catch (error) {
+    console.error('获取Vimeo用户信息失败:', error);
+    return {
+      followerCount: null,
+      homepage: null,
+      videoCount: null,
+      likeCount: null,
+      playCount: null
+    };
   }
 }
 
@@ -331,22 +392,96 @@ export async function processVimeoLink(blockId: number, pluginName: string): Pro
     }
     
     // 添加作者标签（如果有作者信息）
-    if (videoInfo.author) {
+    if (videoInfo.author && videoInfo.authorId && accessToken) {
       const authorTagId = await orca.commands.invokeEditorCommand(
         "core.editor.insertTag",
         null,
         blockId,
         `Vimeo作者：${videoInfo.author}`
       );
-      
+
       // 为作者标签别名块添加"视频创作者"标签
       if (authorTagId) {
-        await orca.commands.invokeEditorCommand(
+        const videoCreatorTagId = await orca.commands.invokeEditorCommand(
           "core.editor.insertTag",
           null,
           authorTagId,
           "视频创作者"
         );
+
+        // 获取用户详细信息
+        try {
+          const userInfo = await getVimeoUserInfo(videoInfo.authorId, accessToken);
+
+          // 为"视频创作者"标签别名块设置详细属性
+          if (videoCreatorTagId) {
+            const creatorBlock = orca.state.blocks[videoCreatorTagId];
+            const creatorTagRef = creatorBlock?.refs?.find(
+              (ref: any) => ref.type === 2 && ref.alias === "视频创作者"
+            );
+
+            if (creatorTagRef) {
+              const refData = [];
+
+              // 添加粉丝数
+              if (userInfo.followerCount !== null) {
+                refData.push({
+                  name: "followerCount",
+                  value: userInfo.followerCount.toString(),
+                  type: 1
+                });
+              }
+
+              // 添加主页链接（使用链接属性类型）
+              if (userInfo.homepage) {
+                refData.push({
+                  name: "homepage",
+                  value: userInfo.homepage,
+                  type: 1,
+                  typeArgs: { subType: "link" }
+                });
+              }
+
+              // 添加视频数
+              if (userInfo.videoCount !== null) {
+                refData.push({
+                  name: "videoCount",
+                  value: userInfo.videoCount.toString(),
+                  type: 1
+                });
+              }
+
+              // 添加喜欢数
+              if (userInfo.likeCount !== null) {
+                refData.push({
+                  name: "likeCount",
+                  value: userInfo.likeCount.toString(),
+                  type: 1
+                });
+              }
+
+              // 添加播放数
+              if (userInfo.playCount !== null) {
+                refData.push({
+                  name: "playCount",
+                  value: userInfo.playCount.toString(),
+                  type: 1
+                });
+              }
+
+              if (refData.length > 0) {
+                await orca.commands.invokeEditorCommand(
+                  "core.editor.setRefData",
+                  null,
+                  creatorTagRef,
+                  refData
+                );
+              }
+            }
+          }
+        } catch (error) {
+          console.error('获取Vimeo用户详细信息失败:', error);
+        }
       }
     }
     

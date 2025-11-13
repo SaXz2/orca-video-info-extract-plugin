@@ -3,7 +3,7 @@
  * 支持哔哩哔哩、YouTube 和 Vimeo 视频链接，自动提取视频信息、缩略图、频道信息等
  */
 
-import { initializeBilibiliTag } from './bilibili';
+import { initializeBilibiliTag, initializeVideoCreatorTag } from './bilibili';
 import { initializeYouTubeTag } from './youtube';
 import { initializeVimeoTag } from './vimeo';
 import { processVideoLink, hasVideoLink, createPasteHandler } from './video-processor';
@@ -28,6 +28,7 @@ export async function load(pluginName: string) {
   // 初始化标签
   await Promise.all([
     initializeBilibiliTag(),
+    initializeVideoCreatorTag(),
     initializeYouTubeTag(),
     initializeVimeoTag()
   ]);

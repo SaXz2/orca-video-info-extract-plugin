@@ -16,6 +16,7 @@ interface Block {
 
 export interface YouTubeVideoInfo {
   author: string | null;
+  channelId: string | null;
   thumbnailUrl: string | null;
   html: string | null;
   publishDate: string | null;
@@ -23,11 +24,19 @@ export interface YouTubeVideoInfo {
   description: string | null;
 }
 
+export interface YouTubeChannelInfo {
+  followerCount: number | null;
+  homepage: string | null;
+  videoCount: number | null;
+  viewCount: number | null;
+}
+
 export interface YouTubeDataAPIResponse {
   items: Array<{
     snippet: {
       title: string;
       channelTitle: string;
+      channelId: string;
       publishedAt: string;
       description: string;
       tags?: string[];
@@ -36,6 +45,20 @@ export interface YouTubeDataAPIResponse {
         medium: { url: string };
         high: { url: string };
       };
+    };
+  }>;
+}
+
+export interface YouTubeChannelAPIResponse {
+  items: Array<{
+    statistics: {
+      subscriberCount: string;
+      videoCount: string;
+      viewCount: string;
+    };
+    snippet: {
+      title: string;
+      description: string;
     };
   }>;
 }
@@ -120,6 +143,7 @@ export async function getYouTubeVideoDetails(videoId: string, apiKey: string): P
     
     return {
       author: snippet.channelTitle || null,
+      channelId: snippet.channelId || null,
       thumbnailUrl: snippet.thumbnails?.high?.url || snippet.thumbnails?.medium?.url || snippet.thumbnails?.default?.url || null,
       html: null, // Data API 不提供嵌入 HTML
       publishDate,
@@ -129,6 +153,58 @@ export async function getYouTubeVideoDetails(videoId: string, apiKey: string): P
   } catch (error) {
     console.error('获取 YouTube 视频详细信息失败:', error);
     throw error;
+  }
+}
+
+/**
+ * 获取 YouTube 频道信息
+ * @param channelId YouTube 频道 ID
+ * @param apiKey YouTube Data API v3 密钥
+ * @returns 频道信息
+ */
+export async function getYouTubeChannelInfo(channelId: string, apiKey: string): Promise<YouTubeChannelInfo> {
+  try {
+    console.log('🔍 开始获取YouTube频道信息，channelId:', channelId);
+    const url = `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&id=${channelId}&key=${apiKey}`;
+    console.log('🌐 请求URL:', url);
+
+    const response = await fetch(url);
+    console.log('📡 API响应状态:', response.status);
+
+    if (!response.ok) {
+      throw new Error(`YouTube Channel API 请求失败: ${response.status}`);
+    }
+
+    const data: YouTubeChannelAPIResponse = await response.json();
+    console.log('📊 YouTube API返回数据:', data);
+
+    if (!data.items || data.items.length === 0) {
+      throw new Error('未找到频道信息');
+    }
+
+    const channel = data.items[0];
+    const statistics = channel.statistics;
+
+    console.log('📋 频道详细信息:', channel);
+    console.log('📈 频道统计数据:', statistics);
+
+    const result = {
+      followerCount: parseInt(statistics.subscriberCount) || null,
+      homepage: channelId ? `https://www.youtube.com/channel/${channelId}` : null,
+      videoCount: parseInt(statistics.videoCount) || null,
+      viewCount: parseInt(statistics.viewCount) || null
+    };
+
+    console.log('✅ 最终YouTube频道信息结果:', result);
+    return result;
+  } catch (error) {
+    console.error('❌ 获取 YouTube 频道信息失败:', error);
+    return {
+      followerCount: null,
+      homepage: null,
+      videoCount: null,
+      viewCount: null
+    };
   }
 }
 
@@ -167,6 +243,7 @@ export async function getYouTubeVideoInfo(videoUrl: string, apiKey?: string): Pr
     
     return {
       author: data.author_name || null,
+      channelId: null,
       thumbnailUrl: data.thumbnail_url || null,
       html: data.html || null,
       publishDate: new Date().toISOString().split('T')[0],
@@ -175,10 +252,11 @@ export async function getYouTubeVideoInfo(videoUrl: string, apiKey?: string): Pr
     };
   } catch (error) {
     console.error('获取 YouTube 视频信息失败:', error);
-    return { 
+    return {
       author: null,
-      thumbnailUrl: null, 
-      html: null, 
+      channelId: null,
+      thumbnailUrl: null,
+      html: null,
       publishDate: new Date().toISOString().split('T')[0],
       tags: [],
       description: null
@@ -283,22 +361,87 @@ export async function processYouTubeLink(blockId: number, pluginName: string): P
     }
     
     // 添加博主标签（如果有频道信息）
-    if (videoInfo.author) {
+    if (videoInfo.author && videoInfo.channelId && apiKey) {
       const bloggerTagId = await orca.commands.invokeEditorCommand(
         "core.editor.insertTag",
         null,
         blockId,
         `油管博主：${videoInfo.author}`
       );
-      
+
       // 为博主标签别名块添加"视频创作者"标签
       if (bloggerTagId) {
-        await orca.commands.invokeEditorCommand(
+        const videoCreatorTagId = await orca.commands.invokeEditorCommand(
           "core.editor.insertTag",
           null,
           bloggerTagId,
           "视频创作者"
         );
+
+        // 获取频道详细信息
+        try {
+          const channelInfo = await getYouTubeChannelInfo(videoInfo.channelId, apiKey);
+
+          // 为"视频创作者"标签别名块设置详细属性
+          if (videoCreatorTagId) {
+            const creatorBlock = orca.state.blocks[videoCreatorTagId];
+            const creatorTagRef = creatorBlock?.refs?.find(
+              (ref: any) => ref.type === 2 && ref.alias === "视频创作者"
+            );
+
+            if (creatorTagRef) {
+              const refData = [];
+
+              // 添加粉丝数
+              if (channelInfo.followerCount !== null) {
+                refData.push({
+                  name: "followerCount",
+                  value: channelInfo.followerCount.toString(),
+                  type: 1
+                });
+              }
+
+              // 添加主页链接（使用链接属性类型）
+              if (channelInfo.homepage) {
+                refData.push({
+                  name: "homepage",
+                  value: channelInfo.homepage,
+                  type: 1,
+                  typeArgs: { subType: "link" }
+                });
+              }
+
+              // 添加视频数
+              if (channelInfo.videoCount !== null) {
+                refData.push({
+                  name: "videoCount",
+                  value: channelInfo.videoCount.toString(),
+                  type: 1
+                });
+              }
+
+              // 添加播放数
+              if (channelInfo.viewCount !== null) {
+                refData.push({
+                  name: "playCount",
+                  value: channelInfo.viewCount.toString(),
+                  type: 1
+                });
+              }
+
+              if (refData.length > 0) {
+                await orca.commands.invokeEditorCommand(
+                  "core.editor.setRefData",
+                  null,
+                  creatorTagRef,
+                  refData
+                );
+              }
+            }
+          }
+        } catch (error) {
+          console.error('获取YouTube频道详细信息失败:', error);
+        }
       }
     }
     
