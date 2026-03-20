@@ -1,7 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { copyFileSync, mkdirSync, existsSync } from 'fs'
-import { join } from 'path'
 
 export default defineConfig({
   plugins: [
@@ -12,11 +11,8 @@ export default defineConfig({
       writeBundle() {
         const srcCssPath = 'src/styles/bilibili-link.css'
         const distCssPath = 'dist/styles/bilibili-link.css'
-        
         if (existsSync(srcCssPath)) {
-          // 确保dist/styles目录存在
           mkdirSync('dist/styles', { recursive: true })
-          // 复制CSS文件
           copyFileSync(srcCssPath, distCssPath)
           console.log(`✓ Copied ${srcCssPath} to ${distCssPath}`)
         }

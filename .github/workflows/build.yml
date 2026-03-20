@@ -59,8 +59,8 @@ jobs:
     - name: Create plugin ZIP package
       if: startsWith(github.ref, 'refs/tags/')
       run: |
-        # 创建ZIP压缩包
-        zip -r orca-video-info-extract-plugin.zip orca-video-info-extract-plugin/
+        # 从文件夹内部打包，解压后直接得到文件，不含外层目录
+        (cd orca-video-info-extract-plugin && zip -r ../orca-video-info-extract-plugin.zip .)
         
         # 显示ZIP内容
         echo "ZIP package contents:"
