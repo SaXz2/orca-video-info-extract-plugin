@@ -44,10 +44,11 @@ jobs:
       run: |
         # 创建插件文件夹
         mkdir -p orca-video-info-extract-plugin/dist
-        mkdir -p orca-video-info-extract-plugin
         
         # 复制必要文件到插件文件夹
         cp dist/index.js orca-video-info-extract-plugin/dist/
+        cp package.json orca-video-info-extract-plugin/
+        cp LICENSE orca-video-info-extract-plugin/
         cp icon.svg orca-video-info-extract-plugin/
         cp README.md orca-video-info-extract-plugin/
         
